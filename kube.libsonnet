@@ -60,137 +60,137 @@
   objectItems(o):: [[k, o[k]] for k in std.objectFields(o)],
 
   // Replace all occurrences of `_` with `-`.
-  hyphenate(s):: std.join("-", std.split(s, "_")),
+  hyphenate(s):: std.join('-', std.split(s, '_')),
 
   // Convert {foo: {a: b}} to [{name: foo, a: b}]
   mapToNamedList(o):: [{ name: $.hyphenate(n) } + o[n] for n in std.objectFields(o)],
 
-  // Return object containing only these fields elements
-  filterMapByFields(o, fields): { [field]: o[field] for field in std.setInter(std.objectFields(o), fields) },
-
   // Convert from SI unit suffixes to regular number
   siToNum(n):: (
     local convert =
-      if std.endsWith(n, "m") then [1, 0.001]
-      else if std.endsWith(n, "K") then [1, 1e3]
-      else if std.endsWith(n, "M") then [1, 1e6]
-      else if std.endsWith(n, "G") then [1, 1e9]
-      else if std.endsWith(n, "T") then [1, 1e12]
-      else if std.endsWith(n, "P") then [1, 1e15]
-      else if std.endsWith(n, "E") then [1, 1e18]
-      else if std.endsWith(n, "Ki") then [2, std.pow(2, 10)]
-      else if std.endsWith(n, "Mi") then [2, std.pow(2, 20)]
-      else if std.endsWith(n, "Gi") then [2, std.pow(2, 30)]
-      else if std.endsWith(n, "Ti") then [2, std.pow(2, 40)]
-      else if std.endsWith(n, "Pi") then [2, std.pow(2, 50)]
-      else if std.endsWith(n, "Ei") then [2, std.pow(2, 60)]
-      else error "Unknown numerical suffix in " + n;
+      if std.endsWith(n, 'm') then [1, 0.001]
+      else if std.endsWith(n, 'K') then [1, 1e3]
+      else if std.endsWith(n, 'M') then [1, 1e6]
+      else if std.endsWith(n, 'G') then [1, 1e9]
+      else if std.endsWith(n, 'T') then [1, 1e12]
+      else if std.endsWith(n, 'P') then [1, 1e15]
+      else if std.endsWith(n, 'E') then [1, 1e18]
+      else if std.endsWith(n, 'Ki') then [2, std.pow(2, 10)]
+      else if std.endsWith(n, 'Mi') then [2, std.pow(2, 20)]
+      else if std.endsWith(n, 'Gi') then [2, std.pow(2, 30)]
+      else if std.endsWith(n, 'Ti') then [2, std.pow(2, 40)]
+      else if std.endsWith(n, 'Pi') then [2, std.pow(2, 50)]
+      else if std.endsWith(n, 'Ei') then [2, std.pow(2, 60)]
+      else error 'Unknown numerical suffix in ' + n;
     local n_len = std.length(n);
     std.parseInt(std.substr(n, 0, n_len - convert[0])) * convert[1]
   ),
 
-  _Object(apiVersion, kind, name):: {
+  _Object(apiVersion, kind, name, app=null, namespace=null):: {
     apiVersion: apiVersion,
     kind: kind,
     metadata: {
-      name: name,
-      labels: { name: name },
       annotations: {},
+      labels: {
+        name: name,
+        [if app != null then 'app']: app,
+        [if app != null && namespace == 'kube-system' then 'k8s-app']: app,
+      },
+      name: name,
+      [if namespace != null then 'namespace']: namespace,
     },
   },
 
   List(): {
-    apiVersion: "v1",
-    kind: "List",
+    apiVersion: 'v1',
+    kind: 'List',
     items_:: {},
     items: $.objectValues(self.items_),
   },
 
-  Namespace(name): $._Object("v1", "Namespace", name) {
+  Namespace(name): $._Object('v1', 'Namespace', name) {
   },
 
-  Endpoints(name): $._Object("v1", "Endpoints", name) {
+  Endpoints(name): $._Object('v1', 'Endpoints', name) {
     Ip(addr):: { ip: addr },
     Port(p):: { port: p },
 
     subsets: [],
   },
 
-  Service(name): $._Object("v1", "Service", name) {
-    local service = self,
+  Service(name, namespace, app=name):
+    $._Object('v1', 'Service', name, app=app, namespace=namespace) {
+      local service = self,
 
-    target_pod:: error "service target_pod required",
-    port:: self.target_pod.spec.containers[0].ports[0].containerPort,
+      target_pod:: error 'service target_pod required',
+      port:: self.target_pod.spec.containers[0].ports[0].containerPort,
 
-    // Helpers that format host:port in various ways
-    http_url:: "http://%s.%s:%s/" % [
-      self.metadata.name,
-      self.metadata.namespace,
-      self.spec.ports[0].port,
-    ],
-    proxy_urlpath:: "/api/v1/proxy/namespaces/%s/services/%s/" % [
-      self.metadata.namespace,
-      self.metadata.name,
-    ],
-    // Useful in Ingress rules
-    name_port:: {
-      serviceName: service.metadata.name,
-      servicePort: service.spec.ports[0].port,
-    },
-
-    spec: {
-      selector: service.target_pod.metadata.labels,
-      ports: [
-        {
-          port: service.port,
-          targetPort: service.target_pod.spec.containers[0].ports[0].name,
-        },
+      // Helpers that format host:port in various ways
+      http_url:: 'http://%s.%s:%s/' % [
+        self.metadata.name,
+        self.metadata.namespace,
+        self.spec.ports[0].port,
       ],
-      type: "ClusterIP",
-    },
-  },
+      proxy_urlpath:: '/api/v1/proxy/namespaces/%s/services/%s/' % [
+        self.metadata.namespace,
+        self.metadata.name,
+      ],
+      // Useful in Ingress rules
+      name_port:: {
+        serviceName: service.metadata.name,
+        servicePort: service.spec.ports[0].port,
+      },
 
-  PersistentVolume(name): $._Object("v1", "PersistentVolume", name) {
+      spec: {
+        selector: service.target_pod.metadata.labels,
+        ports: [
+          {
+            local target_port = service.target_pod.spec.containers[0].ports[0],
+            name: target_port.name,
+            port: service.port,
+            targetPort: target_port.name,
+          },
+        ],
+        type: 'ClusterIP',
+      },
+    },
+
+  PersistentVolume(name): $._Object('v1', 'PersistentVolume', name) {
     spec: {},
   },
 
-  // TODO: This is a terrible name
-  PersistentVolumeClaimVolume(pvc): {
+  PVCVolume(pvc): {
     persistentVolumeClaim: { claimName: pvc.metadata.name },
   },
 
-  StorageClass(name): $._Object("storage.k8s.io/v1beta1", "StorageClass", name) {
-    provisioner: error "provisioner required",
+  StorageClass(name): $._Object('storage.k8s.io/v1beta1', 'StorageClass', name) {
+    provisioner: error 'provisioner required',
   },
 
-  PersistentVolumeClaim(name): $._Object("v1", "PersistentVolumeClaim", name) {
-    local pvc = self,
+  PersistentVolumeClaim(name, namespace, app=name):
+    $._Object('v1', 'PersistentVolumeClaim', name, app=app, namespace=namespace) {
+      local pvc = self,
 
-    storageClass:: null,
-    storage:: error "storage required",
+      storageClass:: null,
+      storage:: error 'storage required',
 
-    metadata+: if pvc.storageClass != null then {
-      annotations+: {
-        "volume.beta.kubernetes.io/storage-class": pvc.storageClass,
-      },
-    } else {},
-
-    spec: {
-      resources: {
-        requests: {
-          storage: pvc.storage,
+      spec: {
+        accessModes: ['ReadWriteOnce'],
+        resources: {
+          requests: {
+            storage: pvc.storage,
+          },
         },
+        [if pvc.storageClass != null then 'storageClassName']: pvc.storageClass,
       },
-      accessModes: ["ReadWriteOnce"],
     },
-  },
 
   Container(name): {
     name: name,
-    image: error "container image value required",
+    image: error 'container image value required',
 
     envList(map):: [
-      if std.type(map[x]) == "object" then { name: x, valueFrom: map[x] } else { name: x, value: map[x] }
+      if std.type(map[x]) == 'object' then { name: x, valueFrom: map[x] } else { name: x, value: map[x] }
       for x in std.objectFields(map)
     ],
 
@@ -198,7 +198,7 @@
     env: self.envList(self.env_),
 
     args_:: {},
-    args: ["--%s=%s" % kv for kv in $.objectItems(self.args_)],
+    args: ['--%s=%s' % kv for kv in $.objectItems(self.args_)],
 
     ports_:: {},
     ports: $.mapToNamedList(self.ports_),
@@ -208,19 +208,26 @@
 
     stdin: false,
     tty: false,
-    assert !self.tty || self.stdin : "tty=true requires stdin=true",
+    assert !self.tty || self.stdin : 'tty=true requires stdin=true',
   },
 
-  Pod(name): $._Object("v1", "Pod", name) {
+  Pod(name): $._Object('v1', 'Pod', name) {
     spec: $.PodSpec,
   },
 
   PodSpec: {
     // The 'first' container is used in various defaults in k8s.
-    default_container:: std.objectFields(self.containers_)[0],
-    containers_:: {},
+    default_container:: std.objectFields(self.containers)[0],
+    //containers_:: {},
 
-    containers: [{ name: $.hyphenate(name) } + self.containers_[name] for name in [self.default_container] + [n for n in std.objectFields(self.containers_) if n != self.default_container]],
+    //containers: [{ name: $.hyphenate(name) } + self.containers_[name] for name in [self.default_container] + [n for n in std.objectFields(self.containers_) if n != self.default_container]],
+
+    //initContainers_:: {},
+    //initContainers:
+    //  [
+    //    { name: $.hyphenate(name) } + self.initContainers_[name]
+    //    for name in std.objectFields(self.initContainers_)
+    //  ],
 
     volumes_:: {},
     volumes: $.mapToNamedList(self.volumes_),
@@ -229,22 +236,20 @@
 
     terminationGracePeriodSeconds: 30,
 
-    assert std.length(self.containers) > 0 : "must have at least one container",
+    assert std.length(self.containers) > 0 : 'must have at least one container',
+  },
 
-    // Return an array of pod's ports numbers
-    ports(proto):: [
-      p.containerPort
-      for p in std.flattenArrays([
-        c.ports
-        for c in self.containers
-      ])
-      if (
-        (!(std.objectHas(p, "protocol")) && proto == "TCP")
-        ||
-        ((std.objectHas(p, "protocol")) && p.protocol == proto)
-      )
-    ],
+  WeightedPodAffinityTerm(matchExpressions={}, matchLabels={}): {
+    podAffinityTerm: {
+      labelSelector: {
+        [if std.length(matchExpressions) > 0 then 'matchExpressions']: $.mapToNamedList(matchExpressions),
+        [if std.length(matchLabels) > 0 then 'matchLabels']: matchLabels,
+      },
+      topologyKey: 'kubernetes.io/hostname',
+    },
+    weight: 100,
 
+    assert std.length(self.podAffinityTerm.labelSelector) == 1 : 'must pass either matchLabels or matchExpressions',
   },
 
   EmptyDirVolume(): {
@@ -272,7 +277,7 @@
     configMap: { name: configmap.metadata.name },
   },
 
-  ConfigMap(name): $._Object("v1", "ConfigMap", name) {
+  ConfigMap(name, namespace, app=name): $._Object('v1', 'ConfigMap', name, namespace=namespace, app=app) {
     data: {},
 
     // I keep thinking data values can be any JSON type.  This check
@@ -280,31 +285,31 @@
     local nonstrings = [
       k
       for k in std.objectFields(self.data)
-      if std.type(self.data[k]) != "string"
+      if std.type(self.data[k]) != 'string'
     ],
-    assert std.length(nonstrings) == 0 : "data contains non-string values: %s" % [nonstrings],
+    assert std.length(nonstrings) == 0 : 'data contains non-string values: %s' % [nonstrings],
   },
 
   // subtype of EnvVarSource
   ConfigMapRef(configmap, key): {
-    assert std.objectHas(configmap.data, key) : "%s not in configmap.data" % [key],
+    assert std.objectHas(configmap.data, key) : '%s not in configmap.data' % [key],
     configMapKeyRef: {
       name: configmap.metadata.name,
       key: key,
     },
   },
 
-  Secret(name): $._Object("v1", "Secret", name) {
+  Secret(name, namespace, app=name): $._Object('v1', 'Secret', name, app=app, namespace=namespace) {
     local secret = self,
 
-    type: "Opaque",
+    type: 'Opaque',
     data_:: {},
     data: { [k]: std.base64(secret.data_[k]) for k in std.objectFields(secret.data_) },
   },
 
   // subtype of EnvVarSource
   SecretKeyRef(secret, key): {
-    assert std.objectHas(secret.data, key) : "%s not in secret.data" % [key],
+    assert std.objectHas(secret.data, key) : '%s not in secret.data' % [key],
     secretKeyRef: {
       name: secret.metadata.name,
       key: key,
@@ -314,7 +319,7 @@
   // subtype of EnvVarSource
   FieldRef(key): {
     fieldRef: {
-      apiVersion: "v1",
+      apiVersion: 'v1',
       fieldPath: key,
     },
   },
@@ -328,51 +333,51 @@
     },
   },
 
-  Deployment(name): $._Object("extensions/v1beta1", "Deployment", name) {
-    local deployment = self,
-
-    spec: {
-      template: {
-        spec: $.PodSpec,
-        metadata: {
-          labels: deployment.metadata.labels,
-          annotations: {},
-        },
-      },
-
-      strategy: {
-        type: "RollingUpdate",
-
-        local pvcs = [
-          v
-          for v in deployment.spec.template.spec.volumes
-          if std.objectHas(v, "persistentVolumeClaim")
-        ],
-        local is_stateless = std.length(pvcs) == 0,
-
-        // Apps trying to maintain a majority quorum or similar will
-        // want to tune these carefully.
-        // NB: Upstream default is surge=1 unavail=1
-        rollingUpdate: if is_stateless then {
-          maxSurge: "25%",  // rounds up
-          maxUnavailable: "25%",  // rounds down
-        } else {
-          // Poor-man's StatelessSet.  Useful mostly with replicas=1.
-          maxSurge: 0,
-          maxUnavailable: 1,
-        },
-      },
-
-      // NB: Upstream default is 0
-      minReadySeconds: 30,
-
-      // NB: Regular k8s default is to keep all revisions
-      revisionHistoryLimit: 10,
-
-      replicas: 1,
-      assert self.replicas >= 1,
+  VersionedDeployment(name, namespace, version, app=name):
+    $.Deployment(name + '-' + version, namespace, app) {
+      metadata+: { labels+: { version: version } },
     },
-  },
+
+  Deployment(name, namespace, app=name):
+    $._Object('extensions/v1beta1', 'Deployment', name, app=app, namespace=namespace) {
+      local deployment = self,
+
+      spec: {
+        template: {
+          spec: $.PodSpec,
+          metadata: {
+            labels: deployment.metadata.labels,
+            annotations: {},
+          },
+        },
+
+        strategy: {
+          type: 'RollingUpdate',
+
+          //local pvcs = [
+          //  v
+          //  for v in deployment.spec.template.spec.volumes
+          //  if std.objectHas(v, 'persistentVolumeClaim')
+          //],
+          //local is_stateless = std.length(pvcs) == 0,
+
+          // Apps trying to maintain a majority quorum or similar will
+          // want to tune these carefully.
+          // NB: Upstream default is surge=1 unavail=1
+          //rollingUpdate: if is_stateless then {
+          //  maxSurge: '25%',  // rounds up
+          //  maxUnavailable: '25%',  // rounds down
+          //} else {
+          //  // Poor-man's StatelessSet.  Useful mostly with replicas=1.
+          //  maxSurge: 0,
+          //  maxUnavailable: 1,
+          //},
+        },
+
+        replicas: 1,
+        assert self.replicas >= 1,
+      },
+    },
 
   CrossVersionObjectReference(target): {
     apiVersion: target.apiVersion,
@@ -380,22 +385,22 @@
     name: target.metadata.name,
   },
 
-  HorizontalPodAutoscaler(name): $._Object("autoscaling/v1", "HorizontalPodAutoscaler", name) {
+  HorizontalPodAutoscaler(name): $._Object('autoscaling/v1', 'HorizontalPodAutoscaler', name) {
     local hpa = self,
 
-    target:: error "target required",
+    target:: error 'target required',
 
     spec: {
       scaleTargetRef: $.CrossVersionObjectReference(hpa.target),
 
       minReplicas: hpa.target.spec.replicas,
-      maxReplicas: error "maxReplicas required",
+      maxReplicas: error 'maxReplicas required',
 
       assert self.maxReplicas >= self.minReplicas,
     },
   },
 
-  StatefulSet(name): $._Object("apps/v1beta1", "StatefulSet", name) {
+  StatefulSet(name): $._Object('apps/v1beta1', 'StatefulSet', name) {
     local sset = self,
 
     spec: {
@@ -417,77 +422,61 @@
     },
   },
 
-  Job(name): $._Object("batch/v1", "Job", name) {
+  Job(name): $._Object('batch/v1', 'Job', name) {
     local job = self,
 
-    spec: $.JobSpec(job),
-  },
-
-  JobSpec(parent): {
-    template: {
-      spec: $.PodSpec {
-        restartPolicy: "OnFailure",
-      },
-      metadata: {
-        labels: parent.metadata.labels,
-        annotations: {},
-      },
-    },
-
-    completions: 1,
-    parallelism: 1,
-  },
-
-  DaemonSet(name): $._Object("extensions/v1beta1", "DaemonSet", name) {
-    local ds = self,
     spec: {
       template: {
+        spec: $.PodSpec {
+          restartPolicy: 'OnFailure',
+        },
         metadata: {
-          labels: ds.metadata.labels,
+          labels: job.metadata.labels,
           annotations: {},
         },
-        spec: $.PodSpec,
       },
+
+      completions: 1,
+      parallelism: 1,
     },
   },
 
-  Ingress(name): $._Object("extensions/v1beta1", "Ingress", name) {
-    spec: {},
-  },
+  DaemonSet(name, namespace, app=name):
+    $._Object('extensions/v1beta1', 'DaemonSet', name, app=app, namespace=namespace) {
+      local ds = self,
+      spec: {
+        template: {
+          metadata: {
+            labels: ds.metadata.labels,
+            annotations: {},
+          },
+          spec: $.PodSpec,
+        },
+      },
+    },
 
-  ThirdPartyResource(name): $._Object("extensions/v1beta1", "ThirdPartyResource", name) {
+  Ingress(name, namespace, app=name):
+    $._Object('extensions/v1beta1', 'Ingress', name, app=app, namespace=namespace) {
+      spec: {},
+    },
+
+  ThirdPartyResource(name): $._Object('extensions/v1beta1', 'ThirdPartyResource', name) {
     versions_:: [],
     versions: [{ name: n } for n in self.versions_],
   },
 
-  CustomResourceDefinition(name): $._Object("apiextensions.k8s.io/v1beta1", "CustomResourceDefinition", name) {
-    spec: {},
+  ServiceAccount(name, namespace, app=name): $._Object('v1', 'ServiceAccount', name, namespace=namespace, app=app) {
   },
 
-  ServiceAccount(name): $._Object("v1", "ServiceAccount", name) {
-  },
-
-  Role(name): $._Object("rbac.authorization.k8s.io/v1beta1", "Role", name) {
+  Role(name, app=name): $._Object('rbac.authorization.k8s.io/v1', 'Role', name, app=app) {
     rules: [],
   },
 
-  ClusterRole(name): $.Role(name) {
-    kind: "ClusterRole",
+  ClusterRole(name, app=name): $.Role(name, app=app) {
+    kind: 'ClusterRole',
   },
 
-  Group(name): {
-    kind: "Group",
-    name: name,
-    apiGroup: "rbac.authorization.k8s.io",
-  },
-
-  User(name): {
-    kind: "User",
-    name: name,
-    apiGroup: "rbac.authorization.k8s.io",
-  },
-
-  RoleBinding(name): $._Object("rbac.authorization.k8s.io/v1beta1", "RoleBinding", name) {
+  RoleBinding(name, app=name): $._Object('rbac.authorization.k8s.io/v1', 'RoleBinding', name, app=app) {
     local rb = self,
 
     subjects_:: [],
@@ -497,98 +486,46 @@
       name: o.metadata.name,
     } for o in self.subjects_],
 
-    roleRef_:: error "roleRef is required",
+    roleRef_:: error 'roleRef is required',
     roleRef: {
-      apiGroup: "rbac.authorization.k8s.io",
+      apiGroup: 'rbac.authorization.k8s.io',
       kind: rb.roleRef_.kind,
       name: rb.roleRef_.metadata.name,
     },
   },
 
-  ClusterRoleBinding(name): $.RoleBinding(name) {
-    kind: "ClusterRoleBinding",
+  ClusterRoleBinding(name, app=name): $.RoleBinding(name, app=app) {
+    kind: 'ClusterRoleBinding',
   },
 
-  // NB: datalines_ can be used to reduce boilerplate importstr as:
-  // kubectl get secret ... -ojson mysec | kubeseal | jq -r .spec.data > mysec-ssdata.txt
-  //   datalines_: importstr "mysec-ssddata.txt"
-  SealedSecret(name): $._Object("bitnami.com/v1alpha1", "SealedSecret", name) {
-    spec: {
-      data:
-        if self.datalines_ != ""
-        then std.join("", std.split(self.datalines_, "\n"))
-        else error "data or datalines_ required (output from: kubeseal | jq -r .spec.data)",
-      datalines_:: "",
-    },
-    assert std.base64Decode(self.spec.data) != "",
-  },
-
-  // NB: kubernetes >= 1.8.x has batch/v1beta1 (olders were batch/v2alpha1)
-  CronJob(name): $._Object("batch/v1beta1", "CronJob", name) {
-    local cronjob = self,
-
-    spec: {
-      jobTemplate: {
-        spec: $.JobSpec(cronjob),
+  APIService(name, app=name): $._Object('apiregistration.k8s.io/v1beta1', 'APIService', name, app=app) {
+    local api = self,
+    kind: 'APIService',
+    service:: error 'service required',
+    spec+: {
+      group: std.split(name, '.')[0],
+      version: std.join('.', std.split(name, '.')[1:]),
+      service+: {
+        name: api.service.metadata.name,
+        namespace: api.service.metadata.namespace,
       },
-
-      schedule: error "Need to provide spec.schedule",
-      successfulJobsHistoryLimit: 10,
-      failedJobsHistoryLimit: 20,
-      // NB: upstream concurrencyPolicy default is "Allow"
-      concurrencyPolicy: "Forbid",
     },
   },
 
-  // NB: helper method to access several Kubernetes objects podRef,
-  // used below to extract its labels
-  podRef(obj):: ({
-                   Pod: obj,
-                   Deployment: obj.spec.template,
-                   StatefulSet: obj.spec.template,
-                   DaemonSet: obj.spec.template,
-                   Job: obj.spec.template,
-                   CronJob: obj.spec.jobTemplate.spec.template,
-                 }[obj.kind]),
-
-  // NB: return a { podSelector: ... } ready to use for e.g. NSPs (see below)
-  // pod labels can be optionally filtered by their label name 2nd array arg
-  podLabelsSelector(obj, filter=null):: {
-    podSelector: std.prune({
-      matchLabels:
-        if filter != null then $.filterMapByFields($.podRef(obj).metadata.labels, filter)
-        else $.podRef(obj).metadata.labels,
-    }),
-  },
-
-  // NB: Returns an array as [{ port: num, protocol: "PROTO" }, {...}, ... ]
-  // Need to split TCP, UDP logic to be able to dedup each set of protocol ports
-  podsPorts(obj_list):: std.flattenArrays([
-    [
-      { port: port, protocol: protocol }
-      for port in std.set(
-        std.flattenArrays([$.podRef(obj).spec.ports(protocol) for obj in obj_list])
-      )
-    ]
-    for protocol in ["TCP", "UDP"]
-  ]),
-
-  // NB: most of the "helper" stuff comes from above (podLabelsSelector, podsPorts),
-  // NetworkPolicy returned object will have "Ingress", "Egress" policyTypes auto-set
-  // based on populated spec.ingress or spec.egress
-  // See tests/test-simple-validate.jsonnet for example(s).
-  NetworkPolicy(name): $._Object("networking.k8s.io/v1", "NetworkPolicy", name) {
-    local networkpolicy = self,
-    spec: {
-      podSelector: {},
-      policyTypes: std.prune([
-        if networkpolicy.spec.ingress != [] then "Ingress" else null,
-        if networkpolicy.spec.egress != [] then "Egress" else null,
-      ]),
-      ingress: $.objectValues(self.ingress_),
-      ingress_:: {},
-      egress: $.objectValues(self.egress_),
-      egress_:: {},
+  Mixins: {
+    'cluster-service': {
+      metadata+: {
+        labels+: {
+          'kubernetes.io/cluster-service': 'true',
+        },
+      },
+    },
+    'critical-pod': {
+      metadata+: {
+        annotations+: {
+          'scheduler.alpha.kubernetes.io/critical-pod': '',
+        },
+      },
     },
   },
 }
