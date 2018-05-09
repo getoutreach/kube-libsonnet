@@ -239,6 +239,12 @@
     assert std.length(self.containers) > 0 : 'must have at least one container',
   },
 
+  PodDisruptionBudget(name, namespace, app=name): $._Object('policy/v1beta1', 'PodDisruptionBudget', name, namespace=namespace, app=app) {
+    local pdb = self,
+    target_pod:: error 'pdb target_pod required',
+    spec: { selector: { matchLabels: pdb.target_pod.metadata.labels } },
+  },
+
   WeightedPodAffinityTerm(matchExpressions={}, matchLabels={}): {
     podAffinityTerm: {
       labelSelector: {

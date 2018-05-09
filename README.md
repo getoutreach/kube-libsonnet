@@ -23,3 +23,4 @@ environment for `kubecfg validate` against kubernetes API endpoint.
 
 Above has some basic Travis CI integration (minikube API still WIP),
 that exercises unit and golden tests.
+
