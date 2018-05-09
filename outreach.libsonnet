@@ -12,6 +12,7 @@ k + kubecfg {
     cluster=null,
     contour='contour',  // which contour instance/subdomain to use
     contourDomain='outreach.cloud',  // which domain contour's dns record lives in
+    host=null,
     ingressDomain='outreach.cloud',  // which domain to write dns to
     serviceName=name,
     servicePort='http',
@@ -19,10 +20,10 @@ k + kubecfg {
   ): self.Ingress(name, namespace, app=app) {
 
     local clusterName = if cluster != null then cluster else $.cluster.name,
-    local host = '%s.%s.%s' % [name, clusterName, ingressDomain],
+    local defaultHost = '%s.%s.%s' % [name, clusterName, ingressDomain],
     local target = '%s.%s.%s' % [contour, clusterName, contourDomain],
     local rule = {
-      host: host,
+      host: if host != null then host else defaultHost,
       http: {
         paths: [{
           backend: {
@@ -33,7 +34,7 @@ k + kubecfg {
       },
     },
     local tls = {
-      hosts: [host],
+      hosts: [if host != null then host else defaultHost],
       secretName: tlsSecret,
     },
     local tlsAnnotations = {
