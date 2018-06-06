@@ -35,7 +35,8 @@ k + kubecfg {
       secretName: tlsSecret,
     },
     local tlsAnnotations = {
-      'certmanager.k8s.io/cluster-issuer': 'letsencrypt-prod',
+      'certmanager.k8s.io/acme-http01-edit-in-place': 'false',
+      'ingress.kubernetes.io/force-ssl-redirect': 'true',
       'kubernetes.io/tls-acme': 'true',
     },
 
